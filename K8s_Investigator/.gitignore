@@ -1,0 +1,14 @@
+# secrets and local credentials
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# eval output (contains full agent traces) and logs
+evals/results/
+*.log

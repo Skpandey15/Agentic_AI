@@ -1,0 +1,65 @@
+# Scenario: "report-api" is slow because its CPU limit is far too low (CPU throttling).
+# No error appears in the logs; the agent must connect limits + usage + latency.
+apiVersion: v1
+kind: Namespace
+metadata: {name: sandbox, labels: {purpose: investigator-lab}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: report-api-code, namespace: sandbox}
+data:
+  server.py: |
+    import hashlib, json, time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    def work():  # CPU-bound: ~50 ms of CPU per call at full speed
+        h = b"x"
+        for _ in range(60000):
+            h = hashlib.sha256(h).digest()
+        return h.hex()[:8]
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            start = time.perf_counter()
+            if self.path == "/health":
+                body = b"ok"
+            elif self.path == "/report":
+                body = work().encode()
+            else:
+                self.send_response(404); self.end_headers(); return
+            self.send_response(200); self.end_headers(); self.wfile.write(body)
+            print(json.dumps({"path": self.path, "ms": round((time.perf_counter() - start) * 1000)}), flush=True)
+        def log_message(self, *a):
+            pass
+
+    ThreadingHTTPServer(("", 8000), H).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: report-api, namespace: sandbox, labels: {app: report-api}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: report-api}}
+  template:
+    metadata: {labels: {app: report-api}}
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 10001}
+      containers:
+        - name: app
+          image: python:3.12-slim
+          command: ["python", "/code/server.py"]
+          env: [{name: PYTHONDONTWRITEBYTECODE, value: "1"}]
+          ports: [{containerPort: 8000}]
+          readinessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 5}
+          volumeMounts: [{name: code, mountPath: /code}]
+          resources:
+            requests: {cpu: 10m, memory: 64Mi}
+            limits: {cpu: 20m, memory: 128Mi}
+      volumes: [{name: code, configMap: {name: report-api-code}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: report-api, namespace: sandbox}
+spec:
+  selector: {app: report-api}
+  ports: [{port: 80, targetPort: 8000}]
