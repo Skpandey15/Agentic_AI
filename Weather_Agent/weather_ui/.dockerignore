@@ -1,0 +1,6 @@
+node_modules
+dist
+.git
+*.log
+k8s
+.public-access.txt

@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-agent
+  labels: {app: weather-agent}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: weather-agent}
+  strategy:
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  template:
+    metadata:
+      labels: {app: weather-agent}
+    spec:
+      terminationGracePeriodSeconds: 35
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: app
+          image: weather-agent:local
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8000}]
+          envFrom:
+            - secretRef: {name: weather-agent-secrets}
+          env:
+            - {name: WX_MODEL, value: claude-haiku-4-5-20251001}
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          lifecycle:
+            preStop:
+              exec: {command: ["sleep", "5"]}   # let the endpoint be removed before SIGTERM
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: weather-agent
+spec:
+  selector: {app: weather-agent}
+  ports: [{port: 80, targetPort: 8000}]

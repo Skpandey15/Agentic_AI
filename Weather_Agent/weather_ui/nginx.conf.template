@@ -1,0 +1,45 @@
+# Rendered by the nginx image's envsubst at start-up (only defined env vars are substituted).
+# Cap on AI calls (all requests share one bucket per pod), so spend stays bounded
+# even for authenticated users.
+limit_req_zone "all" zone=ask:1m rate=10r/m;  # constant key: an empty key (e.g. $server_name with no server_name set) is silently NOT limited
+
+server {
+    listen 8080;
+
+    auth_basic "Weather Agent";
+    auth_basic_user_file /etc/nginx/htpasswd/.htpasswd;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self'; connect-src 'self'" always;
+
+    location = /healthz { access_log off; return 200 "ok\n"; }
+
+    # Only the two endpoints the UI needs are reachable; the service key is added here, server-side.
+    location = /api/weather {
+        limit_except GET { deny all; }
+        proxy_pass http://weather-agent/weather;
+        proxy_set_header x-api-key "${WX_API_KEYS}";
+        proxy_set_header Host $host;
+        proxy_read_timeout 15s;
+    }
+
+    location = /api/ask {
+        limit_except POST { deny all; }
+        limit_req zone=ask burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://weather-agent/ask;
+        proxy_set_header x-api-key "${WX_API_KEYS}";
+        proxy_set_header Host $host;
+        proxy_read_timeout 40s;
+    }
+
+    location /api/ { return 404; }
+
+    location /assets/ { expires 1y; add_header Cache-Control "public, immutable"; }
+
+    location / { try_files $uri /index.html; }
+}

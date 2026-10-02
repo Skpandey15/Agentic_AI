@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-ui
+  labels: {app: weather-ui}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: weather-ui}
+  strategy:
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  template:
+    metadata:
+      labels: {app: weather-ui}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: nginx
+          image: weather-ui:local
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8080}]
+          env:
+            - name: WX_API_KEYS          # injected into nginx config at start-up; never sent to browsers
+              valueFrom:
+                secretKeyRef: {name: weather-agent-secrets, key: WX_API_KEYS}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 96Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:                  # nginx needs a few writable paths on a read-only root
+            - {name: conf, mountPath: /etc/nginx/conf.d}
+            - {name: tmp, mountPath: /tmp}
+            - {name: cache, mountPath: /var/cache/nginx}
+            - {name: htpasswd, mountPath: /etc/nginx/htpasswd, readOnly: true}
+      volumes:
+        - {name: conf, emptyDir: {}}
+        - {name: tmp, emptyDir: {}}
+        - {name: cache, emptyDir: {}}
+        - name: htpasswd
+          secret: {secretName: weather-ui-basic-auth}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: weather-ui
+spec:
+  selector: {app: weather-ui}
+  ports: [{port: 80, targetPort: 8080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: weather-ui
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: weather.localtest.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: weather-ui, port: {number: 80}}

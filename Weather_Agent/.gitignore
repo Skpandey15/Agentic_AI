@@ -1,0 +1,19 @@
+# secrets and local credentials
+.env
+.env.*
+!.env.example
+.public-access.txt
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# node
+node_modules/
+dist/
+
+# eval output and logs
+evals/results/
+*.log
