@@ -7,6 +7,24 @@ A small agentic AI app: a Claude tool-calling loop that answers weather question
 
 Design documentation (HLD and LLD, with diagrams): [docs/HLD_LLD.md](docs/HLD_LLD.md)
 
+## Architecture
+
+Two request paths share one weather tool. The direct path serves UI clicks with no LLM call; only the agentic path (blue) calls Claude.
+
+![Architecture: two request paths, one shared tool](docs/diagrams/architecture.png)
+
+## Deployment
+
+Everything runs as two Deployments in one k3d cluster. nginx is the only workload exposed through the ingress, and it adds the backend key server-side so browsers never see it.
+
+![Deployment: k3d cluster, two pods per service](docs/diagrams/deployment.png)
+
+## Agent loop
+
+The agent loop is about 50 lines of plain Python. Claude decides on each pass whether another tool call is needed; everything else is fixed code with three guards (step limit, deadline, provider errors).
+
+![Agent loop: one decision, three guards](docs/diagrams/agent-loop.png)
+
 ## Layout
 
 | Folder | Contents |

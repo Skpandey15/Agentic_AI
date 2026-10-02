@@ -4,6 +4,24 @@ An SRE-style agent built on Claude's tool use. Given a symptom ("the pods are sl
 
 Design documentation (HLD and LLD, with diagrams): [docs/HLD_LLD.md](docs/HLD_LLD.md)
 
+## Architecture
+
+The agent never touches the cluster directly. Claude chooses tool calls, one guarded tool layer validates and runs them through `kubectl`, and a human approver sits in front of every write. The live `default` namespace is unreachable by design.
+
+![Architecture: agent, guarded tools, approver, cluster](docs/diagrams/architecture.png)
+
+## Approval gate
+
+Every change passes two checks before it can reach the cluster: the patch allowlist, then a human.
+
+![Agent loop and propose_fix gate](docs/diagrams/agent-loop-and-gate.png)
+
+## Eval harness
+
+Each eval trial deploys a broken app into a throwaway namespace, runs the agent, and grades the result from cluster state on four checks.
+
+![Eval trial: five steps, four graded checks](docs/diagrams/eval-harness.png)
+
 > **Lab software.** It is deliberately restricted to namespaces named `sandbox` or `sandbox-<suffix>`. It runs `kubectl` with *your* cluster credentials, so the restriction is enforced by this code and not by Kubernetes RBAC. Do not point it at a cluster you cannot afford to experiment on.
 
 ## Layout
